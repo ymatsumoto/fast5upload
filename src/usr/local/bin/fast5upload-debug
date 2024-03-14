@@ -1,0 +1,92 @@
+#! /bin/bash
+
+echo Checking versions of installed packages...
+VERSION_BAD=0
+dpkg --list ont-python | grep ii || VERSION_BAD=1
+dpkg --list ont-standalone-minknow-release | grep ii || VERSION_BAD=1
+dpkg --list fast5upload | grep ii || VERSION_BAD=1
+if [ $VERSION_BAD -eq 1 ]
+	then echo MinKNOW and fast5upload installation incomplete.
+	echo Please follow MinKNOW installation instruction to install MinKNOW,
+	echo then follow our instruction to install fast5upload.
+	exit 1
+fi
+if [ $(dpkg --list ont-python | grep ii | awk '{print $3}' | cut -d "." -f 1) -eq 3 ]
+	then echo Python Version OK
+	else echo MinKNOW bundled unsupported version of Python.
+	echo Please use apt update \&\& apt upgrade to upgrade to the latest version.
+	exit 1
+fi
+if [ $(dpkg --list ont-standalone-minknow-release | grep ii | awk '{print $3}' | cut -d "." -f 1) -ge 22 ]
+	then echo MinKNOW Version OK
+	else echo MinKNOW is too old.
+	echo please use apt update \&\& apt upgrade to upgrade to the latest version.
+	exit 1
+fi
+echo MinKNOW and fast5upload version OK.
+
+echo Checking dependencies...
+/opt/ont/minknow/ont-python/bin/python -m pip show watchdog | grep Version || VERSION_BAD=1
+if [ $VERSION_BAD -eq 1 ]
+	then echo Watchdog installation failed.
+	echo Please reinstall fast5upload.
+	exit 1
+fi
+if [ $(/opt/ont/minknow/ont-python/bin/python -m pip show watchdog | grep Location | cut -d " " -f 2 | cut -d "/" -f 1-6) != "/opt/ont/minknow/ont-python/lib" ]
+	then echo Watchdog installed to wrong location.
+	/opt/ont/minknow/ont-python/bin/python -m pip show watchdog | grep Location |cut -d " " -f 2 | cut -d "/" -f 1-6
+	echo Please contact support to install watchdog to correct location.
+	exit 1
+fi
+echo Dependencies checked OK
+
+echo Trying to connect to File Upload API...
+
+ln /usr/local/bin/mlstupload mlstupload.py
+tail -n+57 $0 | /opt/ont/minknow/ont-python/bin/python -B || VERSION_BAD=1
+rm mlstupload.py
+
+if [ $VERSION_BAD -eq 1 ]
+	then exit 1
+fi
+
+echo Connect to File Upload API OK.
+echo You are ready to go.
+exit
+
+#!/opt/ont/minknow/ont-python/bin/python
+import sys
+
+def main():
+    if sys.version_info.major == 2:
+        print("Bundled python version is 2.")
+        print("Python 2 is unsupported. Are you sure that you have upgraded MinKNOW?")
+        exit(1)
+    try:
+        import mlstupload
+    except ModuleNotFoundError as e:
+        print("Module",e.name,"not found.")
+        print("Please contact support for how to install the missing module.")
+        exit(2)
+
+    conf = mlstupload.loadConfig()
+    try:
+        api = fast5upload.WebsiteAPI(conf['cloud']['website_server'],conf['cloud']['user'],conf['cloud']['password'])
+    except IOError as e:
+        print("Error when trying to login to Server")
+        print(e)
+        print("Please check your /etc/mlstverse/fast5upload.conf configuration file.")
+        exit(3)
+    req = api.createRequest('rest/session/info','POST', header={'Accept': 'application/json'})
+    req.data = fast5upload.up.urlencode({"id":api.session}).encode("UTF-8")
+    try:
+        resp = fast5upload.ur.urlopen(req)
+        user_info = fast5upload.json.load(resp)
+    except fast5upload.ue.HTTPError as e:
+        print("HTTP Error when trying to communicate with Server")
+        print(e)
+        print(e.read().decode("UTF-8"))
+        exit(1)
+    print("Test successful. Welcome,", user_info["name"])
+
+main() if __name__ == '__main__' else None

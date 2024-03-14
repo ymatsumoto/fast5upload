@@ -1,0 +1,4 @@
+/opt/ont/minknow/ont-python/bin/python3 -m pip install watchdog
+mkdir -p /var/lib/mlstverse
+sqlite3 /var/lib/mlstverse/run.db "CREATE TABLE IF NOT EXISTS run (local text primary key, remote text unique)"
+chown root:root /var/lib/mlstverse/run.db

@@ -1,0 +1,331 @@
+#!/opt/ont/minknow/ont-python/bin/python
+#/usr/bin/env python
+from watchdog.observers import Observer
+from watchdog.events import FileSystemEventHandler
+
+import minknow_api
+
+## A simple dict shall do the trick.
+#from attrdict import AttrDict
+
+#from ConfigParser import SafeConfigParser
+import sys, os, re, json, time, sqlite3
+
+## For Web API
+import hmac
+import urllib.error as ue
+import urllib.parse as up
+import urllib.request
+
+class ur():
+  retry = 3
+  Request = urllib.request.Request
+  def urlopen(url, data=None, attempt=None):
+    retry = ur.retry if attempt is None else attempt
+    lasterror = None
+    for trial in range(retry):
+      try:
+        result = urllib.request.urlopen(url, data=data)
+      except ue.HTTPError as e:
+        print("["+str(trial+1)+"/"+str(retry)+"] HTTP Error:",e.code,e.reason, file=sys.stderr)
+        lasterror = e
+      except ue.URLError as e:
+        print("["+str(trial+1)+"/"+str(retry)+"] Connection Error:",e.reason, file=sys.stderr)
+        lasterror = e
+      else:
+        return result
+      time.sleep(10)
+    if lasterror is None:
+      print("Bad code: You don't even attempted to make the request.")
+      return None
+    print("All",retry,"retry attempts have failed for url:",url.get_full_url() if isinstance(url, urllib.request.Request) else url, file=sys.stderr)
+    raise lasterror
+
+## For File upload
+import io
+
+try:
+  import urllib3
+  encode_multipart_formdata = urllib3.encode_multipart_formdata
+  def multipartdata(a,b):
+    result = urllib3.fields.RequestField("a",b)
+    result.make_multipart()
+    result.headers = a
+    return result
+
+except ModuleNotFoundError:
+  class multipartdata():
+    def __init__(self,header,data):
+      self.header = header
+      self.data = data
+    render_headers = lambda self: "\r\n".join([item+": "+self.header[item] for item in self.header]) + "\r\n\r\n"
+  ## DIY encode multipart formdata
+  iter_field_objects = lambda x:x
+  def encode_multipart_formdata(fields, boundary=None):
+    body = io.BytesIO()
+    boundary = os.urandom(16).hex() if boundary is None else boundary
+
+    for field in iter_field_objects(fields):
+      body.write(f"--{boundary}\r\n".encode("latin-1"))
+      body.write(field.render_headers().encode("utf-8"))
+
+      data = field.data
+
+      if isinstance(data, int):
+        data = str(data)  # Backwards compatibility
+      body.write(data.encode("utf-8") if isinstance(data,str) else data)
+      body.write(b"\r\n")
+
+    body.write(f"--{boundary}--\r\n".encode("latin-1"))
+    content_type = f"multipart/form-data; boundary={boundary}"
+    return body.getvalue(), content_type
+
+
+class WebsiteAPI():
+  sessionTimeout = 3600
+
+  @staticmethod
+  def newRequest(webServer,entry,method="GET",ctype="application/x-www-form-urlencoded",header={},nobody=False):
+    result = ur.Request(webServer+entry,method=method)
+    result.add_header("User-Agent","mlstverse/0.1 (pyapi)")
+    if method not in ("GET","HEAD","OPTIONS") and not nobody: result.add_header("Content-Type",ctype)
+    for item in header:
+      result.add_header(item,header[item])
+    return result
+
+  def __init__(self,ws,uname,pword):
+    self.webServer = ws
+    ## Try to login when initializing
+    req = WebsiteAPI.newRequest(ws,"rest/session/init","POST")
+    query = {"name":uname}
+    try:
+      resp = ur.urlopen(req,up.urlencode(query).encode("ASCII"))
+    except ue.HTTPError as e:
+      print("Error obtaining login token.")
+      raise IOError("Cannot obtain login token. Maybe the server is down.")
+    session = resp.read().decode("UTF-8").strip().split()
+    saltedPass = hmac.new(bytes.fromhex(session[1]),pword.encode("UTF-8"),"SHA256")
+    sessionPass = hmac.new(bytes.fromhex(session[0].rjust(12,"0")),saltedPass.digest(),"SHA256")
+    req = WebsiteAPI.newRequest(ws,"rest/session/login","POST")
+    query = {"id":session[0], "pass":sessionPass.hexdigest()}
+    try:
+      resp = ur.urlopen(req,up.urlencode(query).encode("ASCII"))
+    except ue.HTTPError as e:
+      print("Error logging in.", file=sys.stderr, flush=True)
+      raise IOError(e.read().decode("UTF-8"))
+    self.session = session[0]
+    self.time = time.time()
+    print("Login successful", file=sys.stderr, flush=True)
+
+  def __del__(self):
+    req = WebsiteAPI.newRequest(self.webServer,"rest/session/login","DELETE",nobody=True)
+    query = {"id":self.session}
+    req.full_url += "?"+up.urlencode(query)
+    try:
+      resp = ur.urlopen(req)
+    except ue.HTTPError as e:
+      print("Logout failed")
+      print(e.read().decode("UTF-8"))
+      return
+    print("Logout successful")
+
+  def createRequest(self,entry,method="GET",ctype="application/x-www-form-urlencoded",header={}):
+    if time.time() - WebsiteAPI.sessionTimeout > self.time:
+      raise IOError("Session has timeout. Please login again.")
+    req = WebsiteAPI.newRequest(self.webServer,entry,method,ctype,header)
+    req.add_header("Cookie","SessionID="+self.session)
+    self.time = time.time()
+    return req
+
+# uploadFile(api,conf.cloud.upload_server,uploadToken,item.path)
+def uploadFile(uploadServer,token,filepath,bs=2097152):
+  time.sleep(0.5)
+  stdin = open(filepath,"rb")
+  block = stdin.read(bs)
+  count = 0
+  while block != b"":
+    ## Create the HTTP payload from the block
+    payload = [
+      multipartdata({"Content-Disposition": 'form-data; name="file"; filename="blob"',"Content-Type":"application/octet-stream"},block),
+      multipartdata({"Content-Disposition": 'form-data; name="range"'},str(count*bs)+"-"+str(count*bs+len(block))),
+      multipartdata({"Content-Disposition": 'form-data; name="session"'},token)
+    ]
+
+    ## Send this block to upload server
+    req = ur.Request(uploadServer+"cgi-bin/upload.py","POST")
+    req.data, ctype= encode_multipart_formdata(payload)
+    req.add_header("Content-Type",ctype)
+    req.add_header("User-Agent","mlstverse/0.1 (pyapi)")
+    ur.urlopen(req)
+    print("=",end="", file=sys.stderr, flush=True)
+
+    ## Get next block ready
+    block = stdin.read(bs)
+    count += 1
+  print("", file=sys.stderr, flush=True)
+  stdin.close()
+
+class FileModifyHandler(FileSystemEventHandler):
+  def on_moved(self, event):
+    ext = os.path.splitext(event.dest_path)[1]
+    if ext in (".fast5", ".pod5"):
+      print("Processing", event.dest_path, file=sys.stderr, flush=True)
+      try:
+        uploadFast5(event.dest_path)
+      except Exception as e:
+        print("Failed to upload file", event.dest_path, file=sys.stderr, flush=True)
+    else:
+      print("Skipping", event.dest_path, file=sys.stderr)
+
+def loadConfig():
+  default = {
+    "local": {
+      "runid_db": "/var/lib/mlstverse/run.db",
+      "data": "/var/lib/minknow/data",
+      "port": 8000
+    },
+    "cloud": {
+	     "user": None,
+	     "password": None,
+         "attempt": 3,
+	     "website_server": "https://mlstverse.org/",
+	     "upload_server": "https://www.gen-info.osaka-u.ac.jp/realtime-mlstverse/"
+    }
+  }
+  try:
+    with open('/etc/mlstverse/fast5upload.conf') as f:
+      conf = json.load(f)
+    for param in default:
+      if param not in conf:
+        conf[param] = default[param]
+      else:
+        for k in default[param]:
+          if k not in conf[param]:
+            conf[param][k] = default[param][k]
+  except FileNotFoundError:
+    conf = default
+  return conf
+
+def getRunInfo():
+  getBarCode = lambda x: "SQK-NBD112-96" if x[:7] == "SQK-LSK" else x
+  conf = loadConfig()
+  run = {
+    'user': None,
+    'id': None,
+    'name': "", # so that later re.search would not break
+    'flowcell': 'FLO-MIN106',
+    'kit': 'SQK-RBK004',
+    'barcode_kits': 'SQK-RBK004'
+  }
+  try:
+    # from minknow_api import Connection
+    con = minknow_api.Connection(port=conf["local"]["port"])
+    info = con.protocol.get_run_info()
+  except Exception as error:
+    print("Error occurred when connecting to MinKNOW", error, file=sys.stderr, flush=True)
+    return None
+
+    #tags = AttrDict(run.meta_info.tags)
+    # info.output_path
+  try:
+    run["user"] = conf["cloud"]["user"]
+    run["id"] = info.run_id
+    run["name"] = info.user_info.protocol_group_id.value
+    #run.sample = info.user_info.sample_id
+    #run.protocol = info.protocol_id.split(':')[0]
+    run["flowcell"] = info.protocol_id.split(':')[1]
+    run["kit"] = info.protocol_id.split(':')[2]
+    run["barcode_kits"] = getBarCode(run["kit"])
+  except Exception as error:
+    print("Error occurred when parsing run info:",error, file=sys.stderr, flush=True)
+    return None
+  return run
+
+def uploadFast5(srcPath):
+## Expect srcPath to be a single file pending upload
+  srcFilename = srcPath.split('/')[-1]
+  srcFilename = os.path.basename(srcPath)
+  srcFormat = os.path.splitext(srcFilename)[1][1:].lower()
+  conf = loadConfig()
+  if conf["cloud"]["user"] is None:
+    return
+  run = getRunInfo()
+  if run is None:
+    return
+  #srcPath = os.path.join(conf.cloud.data, run.name)
+  #dstPath = os.path.join(conf.remote.dstDir, run.id, "fast5")
+  #dstPath = os.path.join(conf.cloud.data, run.id, run.name, "rawdata")
+  #conf.remote.srcDir: "/var/lib/minknow/data",
+  #conf.remote.dstDir: "/imetgpfs/temp/realtimeNTM/data"
+  # do nothing if temporary fast5 files
+  if not re.search(run["name"], srcPath):
+    return
+  #NOTE: START OF NEW FUNCTION
+  ## Does the run exist on server?
+  db = sqlite3.connect(conf["local"]["runid_db"])
+  cur = db.cursor()
+  mapping = cur.execute("SELECT remote FROM run WHERE local=?",(run["id"],)).fetchone()
+  api = WebsiteAPI(conf["cloud"]["website_server"],conf["cloud"]["user"],conf["cloud"]["password"])
+
+  if mapping is None:
+    ## Run ID should not exist on remote server. Create it.
+    ## Connect to Web API
+    ## Create a new run on webServer
+    print("New run found. Creating run...", file=sys.stderr, flush=True)
+    query = ur.urlopen(api.createRequest("cgi-bin/createrun.py","POST"),up.urlencode({"name":run["name"]}).encode("ascii")).read().decode("utf-8")
+    query = query.split("\n") ## query[0]: run_id, query[1]: upload_server
+    mapping = (query[0],)
+    ## Record the run_id mapping somewhere
+    cur.execute("INSERT INTO run VALUES (?,?)",(run["id"],query[0]))
+    db.commit()
+    ## Create a new run on uploadServer
+    query = {"session":api.session, "id":query[0], "action":"create", "type":"rawdata", "flowcell":run["flowcell"], "kit":run["kit"], "barcode":run["barcode_kits"]}
+    req = ur.Request(conf["cloud"]["upload_server"]+"cgi-bin/createrun.py","POST")
+    req.add_header("Content-Type","application/x-www-form-urlencoded")
+    req.add_header("User-Agent","mlstverse/0.1 (pyapi)")
+    ur.urlopen(req,up.urlencode(query).encode("ascii"))
+  db.close() # Don't need the mapping any more.
+  ## Run created. Ready to upload.
+  ## First file, obtain an upload token
+  req = ur.Request(conf["cloud"]["upload_server"]+"cgi-bin/createrun.py","POST")
+  req.add_header("Content-Type","application/x-www-form-urlencoded")
+  req.add_header("User-Agent","mlstverse/0.1 (pyapi)")
+  uploadToken = ur.urlopen(req,up.urlencode({"session":api.session,"id":mapping[0],"action":"upload"}).encode("ascii")).read().decode("utf-8").strip()
+  uploadFile(conf["cloud"]["upload_server"],uploadToken,srcPath)
+  ## Close the last file
+  req = ur.Request(conf["cloud"]["upload_server"]+"cgi-bin/upload.py","POST")
+  req.add_header("Content-Type","application/x-www-form-urlencoded")
+  req.add_header("User-Agent","mlstverse/0.1 (pyapi)")
+  targetFile = ur.urlopen(req,up.urlencode({"session":uploadToken,"action":"close", "format": srcFormat}).encode("ascii")).read().decode("UTF-8").strip()
+  while targetFile == "Finalizing":
+    time.sleep(3)
+    targetFile = ur.urlopen(req,up.urlencode({"session":uploadToken,"action":"finalize"}).encode("ascii")).read().decode("UTF-8").strip()
+  ## Report to webserver that the previous file has been uploaded.
+  query = api.createRequest("cgi-bin/uploadinfo.py","POST")
+  ur.urlopen(query,up.urlencode({"action":"upload","upload":uploadToken,"id":mapping[0],"barcode":"fast5","file":targetFile,"name":srcFilename}).encode("ascii"))
+  ## Submit all uploaded file to pipeline for analysis
+  req = ur.Request(conf["cloud"]["upload_server"]+"cgi-bin/submitrun.py","POST")
+  req.add_header("Content-Type","application/x-www-form-urlencoded")
+  req.add_header("User-Agent","mlstverse/0.1 (pyapi)")
+  ur.urlopen(req,up.urlencode({"session":api.session,"upload":uploadToken,"id":mapping[0]}).encode("ascii"))
+  print("File uploaded.", file=sys.stderr, flush=True)
+  ## Finish submitting uploaded data to pipeline.
+
+if __name__ == "__main__":
+  conf = loadConfig()
+  if conf["cloud"]["user"] is None:
+    print("Fatal Error: Web API User not set. Please set it in the configuration file.")
+    exit(1)
+  ur.retry = conf["cloud"]["attempt"]
+  observer = Observer()
+  event_handler = FileModifyHandler()
+  observer.schedule(event_handler, conf["local"]["data"], recursive=True)
+  observer.start()
+  print("Start monitoring "+conf["local"]["data"], file=sys.stderr, flush=True)
+  try:
+    while True:
+      time.sleep(600)
+  except KeyboardInterrupt:
+    observer.stop()
+
+  observer.join()
