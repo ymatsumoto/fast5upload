@@ -2,8 +2,13 @@
 
 echo Checking versions of installed packages...
 VERSION_BAD=0
+
 dpkg --list ont-python | grep ii || VERSION_BAD=1
-dpkg --list ont-standalone-minknow-release | grep ii || VERSION_BAD=1
+
+if [ $(uname -m) == "x86_64" ]
+then dpkg --list ont-standalone-minknow-release | grep ii || VERSION_BAD=1
+fi
+
 dpkg --list fast5upload | grep ii || VERSION_BAD=1
 if [ $VERSION_BAD -eq 1 ]
 	then echo MinKNOW and fast5upload installation incomplete.
@@ -17,11 +22,14 @@ if [ $(dpkg --list ont-python | grep ii | awk '{print $3}' | cut -d "." -f 1) -e
 	echo Please use apt update \&\& apt upgrade to upgrade to the latest version.
 	exit 1
 fi
-if [ $(dpkg --list ont-standalone-minknow-release | grep ii | awk '{print $3}' | cut -d "." -f 1) -ge 22 ]
+
+if [ $(uname -m) == "x86_64" ]
+then if [ $(dpkg --list ont-standalone-minknow-release | grep ii | awk '{print $3}' | cut -d "." -f 1) -ge 22 ]
 	then echo MinKNOW Version OK
 	else echo MinKNOW is too old.
-	echo please use apt update \&\& apt upgrade to upgrade to the latest version.
-	exit 1
+		echo please use apt update \&\& apt upgrade to upgrade to the latest version.
+		exit 1
+	fi
 fi
 echo MinKNOW and fast5upload version OK.
 
@@ -40,4 +48,4 @@ if [ $(/opt/ont/minknow/ont-python/bin/python -m pip show watchdog | grep Locati
 fi
 echo Dependencies checked OK
 
-/opt/ont/minknow/ont-python/bin/python $(dirname $0)/mlstupload-debug.py
+/opt/ont/minknow/ont-python/bin/python "$(dirname $0)/mlstupload-debug.py"
