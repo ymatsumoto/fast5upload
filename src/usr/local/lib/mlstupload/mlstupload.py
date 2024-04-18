@@ -15,7 +15,6 @@ import urllib.parse as up
 
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
-
 import minknow_api
 
 try:
@@ -246,6 +245,11 @@ def get_run_info() -> dict:
         return "SQK-NBD112-96" if kit[:7] == "SQK-LSK" else kit
 
     conf = load_config()
+    ## DEBUG MODE: Use a predetermined run config
+    if "debug" in conf:
+        return conf["debug"]["run"]
+    ## DEBUG MODE end
+
     run = {
         'user': None,
         'id': None,
@@ -472,7 +476,7 @@ def upload_fast5(database: dict, path: str, run_info: dict = None, rescan: bool 
     ## Upload successfully completed. Update the counter.
     db = sqlite3.connect(database["path"])
     cur = db.cursor()
-    cur.execute("UPDATE run SET count = count+1 WHERE local=?", (run["id"],))
+    cur.execute("UPDATE run SET uploaded = uploaded+1 WHERE local=?", (run["id"],))
     db.commit()
     db.close()
     print("File", path, "uploaded.", file=sys.stderr, flush=True)
