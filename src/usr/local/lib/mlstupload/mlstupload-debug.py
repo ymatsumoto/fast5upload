@@ -33,7 +33,7 @@ def main():
                     "Accept": "application/json"
                 }
             )
-            user_info = mlstupload.json.loads(resp.data.encode("utf-8"))
+            user_info = mlstupload.json.loads(resp.data.decode("utf-8"))
     except Exception as err: # pylint: disable=broad-except
         ## As we need to show the user all errors we encountered
         print("Error when trying to login to Server")
