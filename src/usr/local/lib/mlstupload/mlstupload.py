@@ -29,7 +29,7 @@ if not urllib3.__version__.startswith("1.26."):
 
 __doc__ = "A tool to automatically upload MinKNOW data for analysis"
 
-__version__ = (0,2,0)
+__version__ = "0.2.1"
 
 UPLOAD_QUEUE = queue.Queue()
 
