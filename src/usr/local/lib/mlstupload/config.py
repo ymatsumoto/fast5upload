@@ -30,8 +30,8 @@ class Config(configparser.ConfigParser):
             try:
                 with open(src, "w", encoding="utf-8") as stdout:
                     self.write(stdout)
-            except Exception:
-                print("Failed to write the new config format.")
+            except Exception:  # pylint: disable=broad-except
+                print("Failed to automatically update config format.")
         else:
             self.reload()
 

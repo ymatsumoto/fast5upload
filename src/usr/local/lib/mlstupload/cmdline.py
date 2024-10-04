@@ -7,6 +7,7 @@ import argparse
 from . import common
 from . import config
 from . import daemon
+from . import database
 
 
 def main():
@@ -28,8 +29,16 @@ def main():
     common.VERBOSE = args.debug
     common.CONFIG_SRC = args.config or common.CONFIG_SRC
     common.CONFIG = config.Config(common.CONFIG_SRC)
+    common.DATABASE = database.RunDB()
     # Run the daemon
-    daemon.main()
+    if args.debug:
+        from . import debug  # pylint: disable=import-outside-toplevel
+        try:
+            daemon.main()
+        except Exception as err:  # pylint: disable=broad-except
+            debug.hatch(err)
+    else:
+        daemon.main()
 
 
 # It could be called directly or via __init__

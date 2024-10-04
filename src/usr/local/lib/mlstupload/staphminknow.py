@@ -22,6 +22,15 @@ class MinKnow:
     data = {}
     updated = 0
 
+    @staticmethod
+    def _sequencer_filter(name: str) -> bool:
+        if (
+            "sequencer" in common.CONFIG["local"]
+            and common.CONFIG["local"]["sequencer"]
+        ):
+            return name in common.CONFIG["local"]["sequencer"].split(",")
+        return True
+
     @classmethod
     def _get_barcode(cls, kit: str) -> str:
         "Guess the barcoding kit from kit"
@@ -74,7 +83,10 @@ class MinKnow:
             return
         result = {}
         for info in seq_pos:
-            if info.protocol_id.startswith("sequencing/"):
+            if (
+                cls._sequencer_filter(info.device.device_id)
+                and info.protocol_id.startswith("sequencing/")
+            ):
                 # Potentially a run that matches the current file
                 runpath = os.path.normpath(info.output_path)
                 runinfo = cls._get_basecall_param(info)

@@ -21,13 +21,13 @@ class FileModifyHandler(watchdog.events.FileSystemEventHandler):
         "Handle File Move Event"
         ext = os.path.splitext(event.dest_path)[1]
         if ext in (".fast5", ".pod5"):
-            print("Processing", event.dest_path, file=sys.stderr, flush=True)
             try:
                 # Attempt to queue a file for uploading
                 # Get the run info at the same time as we found the file
                 run_info = staphminknow.MinKnow.get_run_info(event.dest_path)
                 if run_info is not None:
                     # We have a valid data file to upload. Queue it.
+                    print("Queued", event.dest_path, file=sys.stderr, flush=True)
                     upload.QUEUE.put(
                         upload.UploadTask(event.dest_path, run_info)
                     )

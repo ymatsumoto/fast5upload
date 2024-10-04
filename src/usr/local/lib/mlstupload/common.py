@@ -20,6 +20,8 @@ VERBOSE = False
 DEBUG = False
 CONFIG_SRC = "/etc/mlstverse/fast5upload.conf"
 CONFIG = None
+DATABASE_SRC = "/var/lib/mlstverse/run.db"
+DATABASE = None
 
 
 # Class Definitions
@@ -86,7 +88,10 @@ Usage:
         urlopen_kw["body"] = body
         urlopen_kw["fields"] = fields
         urlopen_kw["headers"] = headers
-        return cls.pool.request(method, url, **urlopen_kw)
+        return cls.pool.request(
+            method, url,
+            **{item[0]: item[1] for item in urlopen_kw.items() if item[1] is not None}
+        )
 
     @classmethod
     def request_file(

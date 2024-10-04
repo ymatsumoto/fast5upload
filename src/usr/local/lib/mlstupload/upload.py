@@ -5,7 +5,6 @@
 import json
 import os
 import queue
-import sqlite3
 import sys
 import time
 import urllib.parse as up
@@ -51,16 +50,24 @@ class UploadTask:
         "Upload this file to the upload server"
         src_file = os.path.basename(self.src)
         src_format = os.path.splitext(src_file)[1][1:].lower()
+
+        # Does the run exist on server?
+        mapping = common.DATABASE.get_run(self.conf["id"])
+        # Do we have enough data?
+        if (
+            mapping is not None
+            and common.CONFIG["local"]["max_data"]
+            and int(common.CONFIG["local"]["max_data"]) <= mapping[1]
+        ):
+            # We already have enough data. Skip all other uploads.
+            print(
+                "Max file number reached. Skipping", self.src,
+                file=sys.stderr, flush=True
+            )
+            return
+
         with common.WebRequest() as api:
             # Connect to the Web API till we get upload token
-            # Does the run exist on server?
-            db = sqlite3.connect(common.CONFIG["local"]["runid_db"])
-            cur = db.cursor()
-            mapping = cur.execute(
-                "SELECT remote, count FROM run WHERE local=?",
-                (self.conf["id"],)
-            ).fetchone()
-
             if mapping is None:
                 # Run ID should not exist on remote server. Create it.
                 print(
@@ -76,56 +83,43 @@ class UploadTask:
                         "Accept": "application/json"
                     }
                 )
-                query = json.loads(req.body.decode("utf-8"))
+                query = json.loads(req.data.decode("utf-8"))
                 mapping = (query["id"], 0)
                 # Record the run_id mapping somewhere
-                cur.execute(
-                    "INSERT INTO run VALUES (?,?,?)",
-                    (self.conf["id"], query["id"], 0)
-                )
-                cur.close()
+                common.DATABASE.create_run(self.conf["id"], query["id"])
                 # Create a new run on uploadServer
                 query = {
                     "session": api.token,
                     "id": mapping[0],
                     "action": "create",
-                    "type": "rawdata",
-                    "flowcell": self.conf["flowcell"],
-                    "kit": self.conf["kit"],
-                    "barcode": self.conf["barcode_kits"]
+                    "type": "rawdata"
                 }
                 req = api.request_file(
                     "POST",
                     "cgi-bin/createrun.py",
                     headers={
-                        "Content-Type": "application/x-www-form-urlencoded"
+                        "Content-Type": "application/x-www-form-urlencoded",
+                        "Origin": common.WebRequest.webserver
                     },
                     body=up.urlencode(query).encode("ascii")
                 )
-            if common.CONFIG["local"]["max_data"]:
-                if int(common.CONFIG["local"]["max_data"]) >= mapping[1]:
-                    # We already have enough data. Skip all other uploads.
-                    print(
-                        "Max file number reached. Skipping", self.src,
-                        file=sys.stderr, flush=True
-                    )
-                    db.close()
-                    return
-            db.commit()
-            db.close()  # Don't need the mapping any more.
+
             # Run created. Ready to upload.
             # Start of file upload, obtain an upload token
             req = api.request_file(
                 "POST",
                 "cgi-bin/createrun.py",
-                headers={"Content-Type": "application/x-www-form-urlencoded"},
+                headers={
+                    "Content-Type": "application/x-www-form-urlencoded",
+                    "Origin": common.WebRequest.webserver
+                },
                 body=up.urlencode({
                     "session": api.token,
                     "id": mapping[0],
                     "action": "upload"
                 }).encode("ascii")
             )
-            upload_token = req.body.decode("utf-8").strip()
+            upload_token = req.data.decode("utf-8").strip()
         # Done with the first API call and let the file uploader to proceed
         upload_file(upload_token, self.src)
         # Upload completed. Reconnect and submit the file.
@@ -135,7 +129,7 @@ class UploadTask:
             "cgi-bin/upload.py",
             headers={
                 "Content-Type": "application/x-www-form-urlencoded",
-                "Accept": "application/json"
+                # "Accept": "application/json"
             },
             body=up.urlencode({
                 "session": upload_token,
@@ -143,22 +137,25 @@ class UploadTask:
                 "format": src_format
             }).encode("ascii")
         )
-        target_file = json.loads(req.body.decode("utf-8"))
-        while target_file["status"] == "finalizing":
+        # target_file = json.loads(req.data.decode("utf-8"))
+        target_file = {"status": req.data.decode("utf-8").strip()}
+        while target_file["status"].lower() == "finalizing":
             req = common.WebRequest.request_file(
                 "POST",
                 "cgi-bin/upload.py",
                 headers={
                     "Content-Type": "application/x-www-form-urlencoded",
-                    "Accept": "application/json"
+                    # "Accept": "application/json"
                 },
                 body=up.urlencode(
                     {"session": upload_token, "action": "finalize"}
                 ).encode("ascii")
             )
-            target_file = json.loads(req.body.decode("utf-8"))
-            if "init" not in target_file:
-                time.sleep(3)
+            target_file = {"status": req.data.decode("utf-8").strip()}
+            # target_file = json.loads(req.data.decode("utf-8"))
+            # if "init" not in target_file:
+            time.sleep(3)
+        target_file["name"] = target_file["status"]
 
         # Report to webserver that the previous file has been uploaded.
         with common.WebRequest() as api:
@@ -177,7 +174,10 @@ class UploadTask:
             api.request_file(
                 "POST",
                 "cgi-bin/submitfast5.py",
-                headers={"Content-Type": "application/x-www-form-urlencoded"},
+                headers={
+                    "Content-Type": "application/x-www-form-urlencoded",
+                    "Origin": common.WebRequest.webserver
+                },
                 body=up.urlencode({
                     "session": api.token,
                     "upload": upload_token,
@@ -188,12 +188,5 @@ class UploadTask:
                 }).encode("ascii")
             )
         # Upload successfully completed. Update the counter.
-        db = sqlite3.connect(common.CONFIG["local"]["runid_db"])
-        cur = db.cursor()
-        cur.execute(
-            "UPDATE run SET uploaded = uploaded+1 WHERE local=?",
-            (self.conf["id"],)
-        )
-        db.commit()
-        db.close()
+        common.DATABASE.increment_run(self.conf["id"])
         print("File", self.src, "uploaded.", file=sys.stderr, flush=True)
