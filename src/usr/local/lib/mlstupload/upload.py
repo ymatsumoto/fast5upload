@@ -68,6 +68,16 @@ class UploadTask:
 
         with common.WebRequest() as api:
             # Connect to the Web API till we get upload token
+            # The following segment is for enhanced token
+            # user_info = json.loads(api.request(
+            #    "POST",
+            #    "session/info",
+            #    body=up.urlencode({"id": api.token, "sign": "id,flag"})
+            #    headers={
+            #        "Content-Type": "application/x-www-form-urlencoded",
+            #        "Accept": "application/json"
+            #    }
+            # ).data.decode("utf-8"))
             if mapping is None:
                 # Run ID should not exist on remote server. Create it.
                 print(
@@ -119,6 +129,12 @@ class UploadTask:
                     "action": "upload"
                 }).encode("ascii")
             )
+            if req.status == 429:
+                print(
+                    "Upload server quota exceeded. Skipping", self.src,
+                    file=sys.stderr, flush=True
+                )
+                return
             upload_token = req.data.decode("utf-8").strip()
         # Done with the first API call and let the file uploader to proceed
         upload_file(upload_token, self.src)
@@ -137,6 +153,7 @@ class UploadTask:
                 "format": src_format
             }).encode("ascii")
         )
+        # The following is for restified enhancement of submit response
         # target_file = json.loads(req.data.decode("utf-8"))
         target_file = {"status": req.data.decode("utf-8").strip()}
         while target_file["status"].lower() == "finalizing":
