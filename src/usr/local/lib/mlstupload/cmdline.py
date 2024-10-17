@@ -6,7 +6,6 @@ import argparse
 
 from . import common
 from . import config
-from . import daemon
 from . import database
 
 
@@ -20,6 +19,16 @@ def main():
         action="store_true", help="debug mode"
     )
     parser.add_argument(
+        "-t", "--test",
+        action="append",
+        choices=(
+            "login", "upload", "webapi",
+            "database", "minknow", "library",
+            "all"
+        ),
+        help="run tests only and quit"
+    )
+    parser.add_argument(
         "-v", "--version",
         action="version", version="%(prog)s "+common.__version__
     )
@@ -31,14 +40,19 @@ def main():
     common.CONFIG = config.Config(common.CONFIG_SRC)
     common.DATABASE = database.RunDB()
     # Run the daemon
+    if args.test:
+        from . import debug  # pylint: disable=import-outside-toplevel
+        debug.main(args.test)
+        return
     if args.debug:
         from . import debug  # pylint: disable=import-outside-toplevel
+        from . import daemon  # pylint: disable=import-outside-toplevel
         try:
             daemon.main()
         except Exception as err:  # pylint: disable=broad-except
             debug.hatch(err)
-    else:
-        daemon.main()
+        return
+    daemon.main()
 
 
 # It could be called directly or via __init__
