@@ -32,8 +32,7 @@ class Config(configparser.ConfigParser):
                     self.write(stdout)
             except Exception:  # pylint: disable=broad-except
                 print("Failed to automatically update config format.")
-        else:
-            self.reload()
+        self.reload()
 
     def reload(self):
         "Load config"

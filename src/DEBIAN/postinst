@@ -16,5 +16,6 @@ chown root:root /var/lib/mlstverse
 if [ $(head -c 1 /etc/mlstverse/fast5upload.conf) == '{' ]
 then
 	printf 'You are using an old version of fast5upload config.\n'
-	printf 'Please answer no when asked about the configuration file, and reconfigure with your login information.\n'
+	printf 'We will attempt to fix the config format automatically the next time you start fast5upload.\n'
+	printf 'If anything did not work as expected, please contact support.\n'
 fi

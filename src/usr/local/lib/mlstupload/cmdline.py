@@ -52,6 +52,7 @@ def main():
         except Exception as err:  # pylint: disable=broad-except
             debug.hatch(err)
         return
+    from . import daemon  # pylint: disable=import-outside-toplevel
     daemon.main()
 
 
