@@ -1,4 +1,20 @@
-/opt/ont/minknow/ont-python/bin/python3 -m pip install watchdog
+#! /bin/bash
+
+if [ "$1" = "triggered" ]
+then
+	if [ "$2" = "/opt/ont/minknow/ont-python/lib" ]
+	then
+		logger "fast5upload: Triggered for ONT Python"
+	fi
+fi
+
 mkdir -p /var/lib/mlstverse
-sqlite3 /var/lib/mlstverse/run.db "CREATE TABLE IF NOT EXISTS run (local text primary key, remote text unique)"
-chown root:root /var/lib/mlstverse/run.db
+chown root:root /var/lib/mlstverse
+
+/opt/ont/minknow/ont-python/bin/python3 -m pip install watchdog
+
+if [ $(head -c 1 /etc/mlstverse/fast5upload.conf) == '{' ]
+then
+	printf 'You are using an old version of fast5upload config.\n'
+	printf 'Please answer no when asked about the configuration file, and reconfigure with your login information.\n'
+fi
