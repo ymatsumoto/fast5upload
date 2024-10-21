@@ -36,4 +36,3 @@ jobs:
         with:
           name: fast5upload.deb
           path: fast5upload.deb
-          

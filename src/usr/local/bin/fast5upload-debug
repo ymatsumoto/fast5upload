@@ -1,3 +1,4 @@
 #! /bin/bash
-cd "$(dirname $0)/../lib/mlstupload"
-./mlstupload-debug.sh
+
+cd "$(dirname $0)/../lib"
+/opt/ont/minknow/ont-python/bin/python -m mlstupload -t all

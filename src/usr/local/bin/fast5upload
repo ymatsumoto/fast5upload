@@ -1,3 +1,5 @@
 #! /bin/bash
-cd "$(dirname $0)/../lib/mlstupload"
-/opt/ont/minknow/ont-python/bin/python mlstupload.py
+# Setup the environment and execute script in lib.
+
+cd "$(dirname $0)/../lib"
+/opt/ont/minknow/ont-python/bin/python -m mlstupload

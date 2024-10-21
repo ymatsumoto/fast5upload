@@ -14,7 +14,7 @@ as during actual run.
 ### Download the package
 
 You may obtain the latest version of the package from the following URL:
-* https://mlstverse.org/release/fast5upload_latest.deb
+* https://mlstverse.org/release/fast5upload\_latest.deb
 
 ### Install the package
 
@@ -41,13 +41,14 @@ sudo fast5upload-debug
 ```
 
 This program would output a few information regarding your current setup. If you
-see your account name being Welcomed, and `You are good to go` at the end,
-your configuration is working.
+see your account name being Welcomed, your configuration is working.
 
 If anything went wrong during such test, please contact us with a copy of the
 output for further help.
 
-### Enable fast5upload service
+## Usage
+
+### Using fast5upload service
 
 This tool is managed by `systemd`. To use it only for certain runs, execute
 the following command before and after the run:
@@ -69,3 +70,15 @@ command to enable the service:
 systemctl enable --now fast5upload
 ```
 
+## MinKNOW Settings
+
+There are a few hints on how to setup the run in MinKNOW.
+
+We do the basecalling on our upload server, thus in your MinKNOW setup,
+you may turn OFF the basecalling to save some computational power on
+your sequencing computer and have a more stable run.
+
+For barcoding, as we cannot detect which barcoding kit you are using,
+if you are using a sequencing kit that does not offer native barcoding,
+and a separate barcoding kit (e.g. SQK-LSK114 and EXP-NBD112-96), you
+may have to put the default barcoding kit in the configuration file.
