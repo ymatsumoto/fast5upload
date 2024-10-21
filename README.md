@@ -14,7 +14,7 @@ as during actual run.
 ### Download the package
 
 You may obtain the latest version of the package from the following URL:
-* https://mlstverse.org/release/fast5upload\_latest.deb
+* https://mlstverse.org/release/fast5upload_latest.deb
 
 ### Install the package
 
@@ -70,7 +70,7 @@ command to enable the service:
 systemctl enable --now fast5upload
 ```
 
-## MinKNOW Settings
+### MinKNOW Settings
 
 There are a few hints on how to setup the run in MinKNOW.
 
