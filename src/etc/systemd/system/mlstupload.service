@@ -1,15 +1,1 @@
-[Unit]
-Description=MinKNOW auto upload service for MLSTVERSE
-After=network.target
-
-[Service]
-User=root
-Group=root
-ExecStart=/usr/local/bin/fast5upload
-ExecStop=/bin/kill ${MAINPID}
-RestartSec=3
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-Alias=fast5upload.service
+fast5upload.service

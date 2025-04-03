@@ -120,7 +120,7 @@ class SystemTest(collections.abc.Sequence):
                 "Accept": "application/json"
             }
         ).data.decode("utf-8"))
-        cls.check_version(req, {"major": 0, "minor": 1, "patch": 0})
+        cls.check_version(req, {"major": 0, "minor": 2, "patch": 0})
         print("Web API Test passed")
 
     def __init__(self, test_list: list = None):
