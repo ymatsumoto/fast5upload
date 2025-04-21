@@ -11,18 +11,14 @@ We assume that you have finished following the MinKNOW manual to install it onto
 Ubuntu 22.04 machine. You also have an active Internet connection during setup, as well
 as during actual run.
 
-### Download the package
+### Automated Installation Script
+Since release v0.7.3, an automated installation script is prepared for quick and easy
+installation of this program.
 
-You may obtain the latest version of the package from the following URL:
-* https://mlstverse.org/release/fast5upload_latest.deb
-
-### Install the package
-
-We recommend using `apt` to complete the installation, so that the libraries this
-program depends on could be installed automatically as well.
+In order to use it, open a terminal and type in the following command:
 
 ```bash
-sudo apt install ~/Downloads/fast5upload_latest.deb
+curl -sSf https://mlstverse.org/repo/get-fast5upload.sh | sudo sh
 ```
 
 ### Basic configurations
@@ -82,3 +78,23 @@ For barcoding, as we cannot detect which barcoding kit you are using,
 if you are using a sequencing kit that does not offer native barcoding,
 and a separate barcoding kit (e.g. SQK-LSK114 and EXP-NBD112-96), you
 may have to put the default barcoding kit in the configuration file.
+
+## Maintenance
+
+Since v0.7.3, the release and update is handled automatically by the apt
+system built in to Ubuntu. Use the following command to upgrade everything
+including your system, MinKNOW, and fast5upload:
+
+```bash
+sudo apt update
+sudo apt upgrade
+```
+
+### Common Issue
+
+The signing key for our repository would expire once every two years.
+In the following situations, you may follow the Installation instruction (#Installation)
+again to get yourself back on track:
+
+* When you are upgrading from a version prior to v0.7.3
+* When you have not upgraded for over a year, and received an error message saying the Key is not valid.
