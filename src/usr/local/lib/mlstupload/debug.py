@@ -5,8 +5,10 @@
 import code
 import collections.abc
 import json
+import os
 import readline
 import rlcompleter  # pylint: disable=unused-import
+import subprocess
 import sys
 import traceback
 import uuid
@@ -55,7 +57,24 @@ class SystemTest(collections.abc.Sequence):
     @staticmethod
     def minknow_test():
         "Checks for staphminknow"
-        staphminknow.MinKnow.refresh()
+        # MinKNOW Cert-Gen Bug check
+        if os.path.isdir("/data/rpc-certs/minknow"):
+            print("ERROR: This version of MinKNOW Core comes with a certificate error.")
+            if input(
+                "Do you want to attempt auto-fix for this issue? (y/N): "
+            ).lower() in ("y","yes"):
+                subprocess.run(("rm", "-frv", "/data/rpc-certs/minknow"), check=True)
+                print("Auto-fix completed.")
+        try:
+            staphminknow.MinKnow.refresh()
+        except Exception as error:  # pylint: disable=broad-except
+            print(
+                "Failed to connect to MinKNOW API. Error:",
+                error,
+                "Please contact support.",
+                sep="\n"
+            )
+            raise
         print(
             "MinKNOW API test passed. "
             "The following directories would be monitored:"

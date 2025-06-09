@@ -2,6 +2,7 @@
 
 "Wrapper script to interact with minknow_api"
 
+import hashlib
 import importlib
 import os
 import sys
@@ -12,8 +13,10 @@ from . import common
 # MinKNOW API Library Handling
 try:
     MINKNOW_API = importlib.import_module("minknow_api")
+    importlib.import_module(".manager", "minknow_api")
 except ImportError:
     MINKNOW_API = importlib.import_module(".minknow_api_debug", __package__)
+    # this module comes with manager. no need to import that manually
 
 
 class MinKnow:
@@ -67,20 +70,32 @@ class MinKnow:
         return run
 
     @classmethod
+    def _get_default_param(cls, filepath: str) -> dict:
+        "Get basecall parameter from estimation"
+        def uuid_formatter(orig: str) -> str:
+            "format a md5sum hexdump string into uuid format"
+            return "-".join((orig[:8], orig[8:12], orig[12:16], orig[16:20], orig[20:]))
+        run_name = os.path.basename(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(filepath))))
+        )
+        run = {
+            "user": common.CONFIG["cloud"]["user"],
+            "id": uuid_formatter(hashlib.md5(run_name.encode("ascii")).hexdigest()),
+            "name": run_name,
+            "flowcell": "FLO-MIN114",
+            "kit": "SQK-RBK114-96",
+            "barcode_kits": "SQK-RBK114-96"
+        }
+        return run
+
+    @classmethod
     def refresh(cls):
         "Get MinKNOW sequencing positions and their config"
-        try:
-            man = MINKNOW_API.manager.Manager()
-            seq_pos = [
-                item.connect().protocol.get_run_info()
-                for item in man.flow_cell_positions()
-            ]
-        except Exception as error:  # pylint: disable=broad-except
-            print(
-                "Error occurred when connecting to MinKNOW", error,
-                file=sys.stderr, flush=True
-            )
-            return
+        man = MINKNOW_API.manager.Manager()
+        seq_pos = [
+            item.connect().protocol.get_run_info()
+            for item in man.flow_cell_positions()
+        ]
         result = {}
         for info in seq_pos:
             if (
@@ -101,7 +116,11 @@ class MinKnow:
         data_path = os.path.dirname(os.path.dirname(path))
         if data_path in cls.data:
             return cls.data[data_path]
-        cls.refresh()
+        try:
+            cls.refresh()
+        except Exception as error:  # pylint: disable=broad-except
+            print("Updating sequencer position info failed.", error, file=sys.stderr, flush=True)
+            return cls._get_default_param(path)
         if data_path in cls.data:
             return cls.data[data_path]
         return None
