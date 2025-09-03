@@ -8,6 +8,20 @@ import os
 
 from . import common
 
+TEMPLATE_CONF = {
+    "local": {
+        "runid_db": "/var/lib/mlstverse/run.db",
+        "data": "/var/lib/minknow/data",
+        "max_data": 100
+    },
+    "cloud": {
+        "attempt": "3",
+        "website_server": "https://mlstverse.org",
+        "upload_server":
+            "https://www.gen-info.osaka-u.ac.jp/realtime-mlstverse"
+    }
+}
+
 
 class Config(configparser.ConfigParser):
     "Configuration Wrapper"
@@ -40,9 +54,15 @@ class Config(configparser.ConfigParser):
         if last_update > self.update:
             # New update is available
             self.read(self.src, encoding="utf-8")
+            assert "cloud" in self and "local" in self, "Incomplete config"
             self.update = last_update
             assert self["cloud"]["user"], "Username not in config"
             assert self["cloud"]["password"], "Password not in config"
+            # Check and fill void
+            for item in TEMPLATE_CONF.items():
+                for entry in item[1].items():
+                    if self[item[0]].get(entry[0]) is None:
+                        self[item[0]][entry[0]] = entry[1]
             for item in Config.update_hook:
                 item(self)
             if common.VERBOSE:

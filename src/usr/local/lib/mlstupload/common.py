@@ -12,7 +12,7 @@ import urllib.parse as up
 from pip._vendor import urllib3
 VENDORED_URLLIB = True
 
-__version_info__ = (0, 2, 1)
+__version_info__ = (0, 2, 2)
 __version__ = ".".join((str(item) for item in __version_info__))
 
 # Shared Variables
