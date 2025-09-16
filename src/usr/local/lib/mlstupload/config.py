@@ -12,7 +12,7 @@ TEMPLATE_CONF = {
     "local": {
         "runid_db": "/var/lib/mlstverse/run.db",
         "data": "/var/lib/minknow/data",
-        "max_data": 100
+        "max_data": ""
     },
     "cloud": {
         "attempt": "3",
