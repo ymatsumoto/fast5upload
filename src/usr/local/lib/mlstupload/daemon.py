@@ -26,7 +26,7 @@ class FileModifyHandler(watchdog.events.FileSystemEventHandler):
         ext = os.path.splitext(event.src_path)[1]
         if ext in (".fast5", ".pod5"):
             if (
-                event.src_path in dedup and
+                event.src_path in FileModifyHandler.dedup and
                 not event.src_path.startswith("reup")
             ):
                 return  # duplicate
@@ -62,7 +62,7 @@ class FileModifyHandler(watchdog.events.FileSystemEventHandler):
         ext = os.path.splitext(event.dest_path)[1]
         if ext in (".fast5", ".pod5"):
             if (
-                event.src_path in dedup and
+                event.src_path in FileModifyHandler.dedup and
                 not event.src_path.startswith("reup")
             ):
                 return  # duplicate
