@@ -8,6 +8,8 @@ import json
 import os
 import readline
 import rlcompleter  # pylint: disable=unused-import
+import shutil
+import socket
 import subprocess
 import sys
 import traceback
@@ -53,6 +55,53 @@ class SystemTest(collections.abc.Sequence):
                 "Please reinstall this package from deb."
             )
             raise
+
+    @staticmethod
+    def watchdog_test():
+        "Checks for if the watchdog monitor is functional"
+        fake_run = "DEBUGRUN-NTM"
+        timeout = 10
+        secret_key = os.urandom(8).hex()
+        # os.mkdir("/tmp/fast5upload_debug")
+        os.makedirs("/tmp/fast5upload_debug/"+fake_run, exist_ok=True)
+        with open(os.path.join(
+            "/tmp/fast5upload_debug", fake_run, "DAEMON_WATCH_TEST.pod5"
+        ), "w") as stdout:
+            stdout.write(secret_key)
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+            sock.bind("\0"+secret_key)
+            sock.listen(1)
+            sock.settimeout(5)
+            # socket ready, now send the event
+            shutil.move(
+                "/tmp/fast5upload_debug/"+fake_run,
+                common.CONFIG["local"]["data"]
+            )
+            os.rmdir("/tmp/fast5upload_debug")
+            # accept the result
+            try:
+                conn, addr = sock.accept()
+            except TimeoutError:
+                if os.path.isdir(os.path.join(
+                    common.CONFIG["local"]["data"],
+                    fake_run
+                )):
+                    print("Cleanup failed test dir")
+                    shutil.rmtree(os.path.join(
+                        common.CONFIG["local"]["data"],
+                        fake_run
+                    ))
+                print(
+                    "Daemon Watchdog test FAILED.\n"
+                    "Please restart the daemon with the following command:\n\n"
+                    "  sudo systemctl restart fast5upload\n\n"
+                    "and rerun this test."
+                )
+                raise
+            with conn:
+                result = conn.recv(1024)
+                assert result == b"OK", "Bad response"
+        print("Watchdog FS Monitoring test passed")
 
     @staticmethod
     def minknow_test():
@@ -150,6 +199,7 @@ class SystemTest(collections.abc.Sequence):
     def __init__(self, test_list: list = None):
         all_tests = {
             "library": SystemTest.library_test,
+            "watchdog": SystemTest.watchdog_test,
             "login": SystemTest.login_test,
             "database": SystemTest.database_test,
             "minknow": SystemTest.minknow_test,

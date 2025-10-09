@@ -4,6 +4,7 @@
 
 import os
 import signal
+import socket
 import sys
 
 # Import third-party
@@ -30,6 +31,27 @@ class FileModifyHandler(watchdog.events.FileSystemEventHandler):
                 not event.src_path.startswith("reup")
             ):
                 return  # duplicate
+            elif os.path.basename(event.src_path) == "DAEMON_WATCH_TEST.pod5":
+                print(
+                    "C: fast5upload_debug file detected.",
+                    file=sys.stderr, flush=True
+                )
+                try:
+                    with open(event.src_path, "r", encoding="utf-8") as stdin:
+                        callback = stdin.read().strip()
+                    os.remove(event.src_path)
+                    os.rmdir(os.path.dirname(event.src_path))
+                    with socket.socket(
+                        socket.AF_UNIX, socket.SOCK_STREAM
+                    ) as sock:
+                        sock.connect("\0"+callback)
+                        sock.sendall(b"OK")
+                except Exception as err:
+                    print(
+                        "An exception occurred when processing debug",
+                        err, file=sys.stderr, flush=True
+                    )
+                return  # debug
             else:
                 FileModifyHandler.dedup.add(event.src_path)
             try:
@@ -39,7 +61,7 @@ class FileModifyHandler(watchdog.events.FileSystemEventHandler):
                 if run_info is not None:
                     # We have a valid data file to upload. Queue it.
                     print(
-                        "M: Queued", event.src_path,
+                        "C: Queued", event.src_path,
                         file=sys.stderr, flush=True
                     )
                     upload.QUEUE.put(
@@ -59,15 +81,37 @@ class FileModifyHandler(watchdog.events.FileSystemEventHandler):
         "Handle File Move Event"
         if not isinstance(event, watchdog.events.FileMovedEvent):
             return  # Not file
+        print("D: ", event.src_path, event.dest_path, file=sys.stderr, flush=True)
         ext = os.path.splitext(event.dest_path)[1]
         if ext in (".fast5", ".pod5"):
             if (
-                event.src_path in FileModifyHandler.dedup and
-                not event.src_path.startswith("reup")
+                event.dest_path in FileModifyHandler.dedup and
+                not event.dest_path.startswith("reup")
             ):
                 return  # duplicate
+            elif os.path.basename(event.dest_path) == "DAEMON_WATCH_TEST.pod5":
+                print(
+                    "M: fast5upload_debug file detected.",
+                    file=sys.stderr, flush=True
+                )
+                try:
+                    with open(event.dest_path, "r", encoding="utf-8") as stdin:
+                        callback = stdin.read().strip()
+                    os.remove(event.dest_path)
+                    os.rmdir(os.path.dirname(event.dest_path))
+                    with socket.socket(
+                        socket.AF_UNIX, socket.SOCK_STREAM
+                    ) as sock:
+                        sock.connect("\0"+callback)
+                        sock.sendall(b"OK")
+                except Exception as err:
+                    print(
+                        "An exception occurred when processing debug",
+                        err, file=sys.stderr, flush=True
+                    )
+                return  # debug
             else:
-                FileModifyHandler.dedup.add(event.src_path)
+                FileModifyHandler.dedup.add(event.dest_path)
             try:
                 # Attempt to queue a file for uploading
                 # Get the run info at the same time as we found the file
