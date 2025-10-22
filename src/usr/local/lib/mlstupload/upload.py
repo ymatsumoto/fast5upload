@@ -39,6 +39,71 @@ def upload_file(token: str, filepath: str, bs=2097152):
     print("", file=sys.stderr, flush=True)
 
 
+def create_run(conf: dict):
+    "Create a new run on the server"
+    mapping = common.DATABASE.get_run(conf["id"])
+    with common.WebRequest() as api:
+        # Connect to the Web API
+        # The following segment is for enhanced token
+        # user_info = json.loads(api.request(
+        #    "POST",
+        #    "session/info",
+        #    body=up.urlencode({"id": api.token, "sign": "id,flag"})
+        #    headers={
+        #        "Content-Type": "application/x-www-form-urlencoded",
+        #        "Accept": "application/json"
+        #    }
+        # ).data.decode("utf-8"))
+        if mapping is None:
+            # Run ID should not exist on remote server. Create it.
+            print(
+                "New run found. Creating run...",
+                file=sys.stderr, flush=True
+            )
+            req = api.request(
+                "POST",
+                "rest/run",
+                body=up.urlencode({"name": conf["name"]}),
+                headers={
+                    "Content-Type": "application/x-www-form-urlencoded",
+                    "Accept": "application/json"
+                }
+            )
+            query = json.loads(req.data.decode("utf-8"))
+            mapping = (query["id"], 0)
+            # Record the run_id mapping somewhere
+            common.DATABASE.create_run(conf["id"], query["id"])
+            # Create a new run on uploadServer
+            query = {
+                "session": api.token,
+                "id": mapping[0],
+                "action": "create",
+                "type": "rawdata"
+            }
+            req = api.request_file(
+                "POST",
+                "cgi-bin/createrun.py",
+                headers={
+                    "Content-Type": "application/x-www-form-urlencoded",
+                    "Origin": common.WebRequest.webserver
+                },
+                body=up.urlencode(query).encode("ascii")
+            )
+
+
+class CreateRunTask:
+    "Class to represent a create-run request"
+
+    def __init__(self, src: str, conf: dict):
+        self.src = src
+        self.conf = conf
+
+    def upload(self):
+        "Create the run on the server"
+        print("Initiate create_run from", self.src)
+        create_run(self.conf)
+
+
 class UploadTask:
     "Class to represent an upload task"
 

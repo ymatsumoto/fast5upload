@@ -20,27 +20,45 @@ class FileModifyHandler(watchdog.events.FileSystemEventHandler):
     "Watchdog Override to trigger upload_fast5 when a fast5/pod5 is found"
     dedup = set()
 
-    def on_created(self, event: watchdog.events.FileSystemEvent):
-        "Handle File Move Event"
-        if not isinstance(event, watchdog.events.FileCreatedEvent):
-            return  # Not file
-        ext = os.path.splitext(event.src_path)[1]
+    @staticmethod
+    def _handle_run_directory(path: str):
+        "Handle new directory for run creation"
+        if os.path.dirname(
+            os.path.dirname(os.path.dirname(path))
+        ) != common.CONFIG["local"]["data"]:
+            # Subdir need to be ignored
+            return
+        run_info = staphminknow.MinKnow.get_run_info(path, True)
+        if run_info is not None:
+            # Create the new run on browser.
+            # Duplication is handled automatically as
+            # in upload we do a DB lookup for the run id
+            print("New run directory detected.")
+            upload.QUEUE.put(
+                upload.CreateRunTask(path, run_info)
+            )
+            # upload.create_run(run_info)
+
+    @staticmethod
+    def _handle_signal_file(path: str):
+        "Handle signal file for uploading etc"
+        ext = os.path.splitext(path)[1]
         if ext in (".fast5", ".pod5"):
             if (
-                event.src_path in FileModifyHandler.dedup and
-                not event.src_path.startswith("reup")
+                path in FileModifyHandler.dedup and
+                not path.startswith("reup")
             ):
                 return  # duplicate
-            elif os.path.basename(event.src_path) == "DAEMON_WATCH_TEST.pod5":
+            elif os.path.basename(path) == "DAEMON_WATCH_TEST.pod5":
                 print(
-                    "C: fast5upload_debug file detected.",
+                    "fast5upload_debug file detected.",
                     file=sys.stderr, flush=True
                 )
                 try:
-                    with open(event.src_path, "r", encoding="utf-8") as stdin:
+                    with open(path, "r", encoding="utf-8") as stdin:
                         callback = stdin.read().strip()
-                    os.remove(event.src_path)
-                    os.rmdir(os.path.dirname(event.src_path))
+                    os.remove(path)
+                    os.rmdir(os.path.dirname(path))
                     with socket.socket(
                         socket.AF_UNIX, socket.SOCK_STREAM
                     ) as sock:
@@ -53,87 +71,57 @@ class FileModifyHandler(watchdog.events.FileSystemEventHandler):
                     )
                 return  # debug
             else:
-                FileModifyHandler.dedup.add(event.src_path)
+                FileModifyHandler.dedup.add(path)
             try:
                 # Attempt to queue a file for uploading
                 # Get the run info at the same time as we found the file
-                run_info = staphminknow.MinKnow.get_run_info(event.src_path)
+                run_info = staphminknow.MinKnow.get_run_info(path)
                 if run_info is not None:
                     # We have a valid data file to upload. Queue it.
                     print(
-                        "C: Queued", event.src_path,
+                        "C: Queued", path,
                         file=sys.stderr, flush=True
                     )
                     upload.QUEUE.put(
-                        upload.UploadTask(event.src_path, run_info)
+                        upload.UploadTask(path, run_info)
                     )
             except Exception as err:  # pylint: disable=broad-except
                 print(
                     "Failed to upload file",
-                    event.src_path, ":", err,
+                    path, ":", err,
                     file=sys.stderr, flush=True
                 )
         else:
             if common.VERBOSE:
-                print("Skipping", event.src_path, file=sys.stderr, flush=True)
+                print("Skipping", path, file=sys.stderr, flush=True)
+
+    def on_created(self, event: watchdog.events.FileSystemEvent):
+        "Handle FileCreate event from move directory"
+        if isinstance(event, watchdog.events.DirCreatedEvent):
+            if common.VERBOSE:
+                print("+", event.src_path, file=sys.stderr, flush=True)
+            FileModifyHandler._handle_run_directory(event.src_path)
+        if isinstance(event, watchdog.events.FileCreatedEvent):
+            if common.VERBOSE:
+                print("+", event.src_path, file=sys.stderr, flush=True)
+            FileModifyHandler._handle_signal_file(event.src_path)
 
     def on_moved(self, event: watchdog.events.FileSystemEvent):
-        "Handle File Move Event"
-        if not isinstance(event, watchdog.events.FileMovedEvent):
-            return  # Not file
-        print("D: ", event.src_path, event.dest_path, file=sys.stderr, flush=True)
-        ext = os.path.splitext(event.dest_path)[1]
-        if ext in (".fast5", ".pod5"):
-            if (
-                event.dest_path in FileModifyHandler.dedup and
-                not event.dest_path.startswith("reup")
-            ):
-                return  # duplicate
-            elif os.path.basename(event.dest_path) == "DAEMON_WATCH_TEST.pod5":
-                print(
-                    "M: fast5upload_debug file detected.",
-                    file=sys.stderr, flush=True
-                )
-                try:
-                    with open(event.dest_path, "r", encoding="utf-8") as stdin:
-                        callback = stdin.read().strip()
-                    os.remove(event.dest_path)
-                    os.rmdir(os.path.dirname(event.dest_path))
-                    with socket.socket(
-                        socket.AF_UNIX, socket.SOCK_STREAM
-                    ) as sock:
-                        sock.connect("\0"+callback)
-                        sock.sendall(b"OK")
-                except Exception as err:
-                    print(
-                        "An exception occurred when processing debug",
-                        err, file=sys.stderr, flush=True
-                    )
-                return  # debug
-            else:
-                FileModifyHandler.dedup.add(event.dest_path)
-            try:
-                # Attempt to queue a file for uploading
-                # Get the run info at the same time as we found the file
-                run_info = staphminknow.MinKnow.get_run_info(event.dest_path)
-                if run_info is not None:
-                    # We have a valid data file to upload. Queue it.
-                    print(
-                        "M: Queued", event.dest_path,
-                        file=sys.stderr, flush=True
-                    )
-                    upload.QUEUE.put(
-                        upload.UploadTask(event.dest_path, run_info)
-                    )
-            except Exception as err:  # pylint: disable=broad-except
-                print(
-                    "Failed to upload file",
-                    event.dest_path, ":", err,
-                    file=sys.stderr, flush=True
-                )
-        else:
+        "Handle FileMove event from rename"
+        if isinstance(event, watchdog.events.DirCreatedEvent):
             if common.VERBOSE:
-                print("Skipping", event.dest_path, file=sys.stderr, flush=True)
+                print(
+                    event.src_path, "->", event.dest_path,
+                    file=sys.stderr, flush=True
+                )
+            FileModifyHandler._handle_run_directory(event.dest_path)
+        if isinstance(event, watchdog.events.FileMovedEvent):
+            if common.VERBOSE:
+                print(
+                    event.src_path, "->", event.dest_path,
+                    file=sys.stderr, flush=True
+                )
+            FileModifyHandler._handle_signal_file(event.dest_path)
 
 
 def start_monitor():

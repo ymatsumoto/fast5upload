@@ -111,9 +111,9 @@ class MinKnow:
         cls.updated = time.time()
 
     @classmethod
-    def get_run_info(cls, path: str) -> dict:
+    def get_run_info(cls, path: str, from_root: bool = False) -> dict:
         "Get run info for the path of the data file"
-        data_path = os.path.dirname(os.path.dirname(path))
+        data_path = path if from_root else os.path.dirname(os.path.dirname(path))
         if data_path in cls.data:
             return cls.data[data_path]
         try:
